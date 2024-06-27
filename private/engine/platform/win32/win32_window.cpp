@@ -2,6 +2,7 @@
 #include <engine/platform/win32/win32_gl_context.hpp>
 
 #include <engine/core/window/window.hpp>
+#include <engine/core/graphics/bitmap.hpp>
 #include <engine/core/graphics/graphics_backend.hpp>
 #include <engine/core/utils/static_factory_registrar.hpp>
 
@@ -78,6 +79,69 @@ namespace engine {
         void Win32Window::setTitle(std::string_view title) {
             if (h_Window) {
                 SetWindowText(h_Window, title.data());
+            }
+        }
+
+        // ToDo: I think this method may be EXPENSIVE in memory usage
+        // what do I mean by that? well... we're re-allocating the bitmap every time
+        // this method is called, so therefore we would have a copy of the bitmap,
+        // wasting memory usage. I would prefer to use the bitmap directly, somehow.
+        HICON bitmapToHICON(const core::graphics::Bitmap &icon) {
+            // we create DIB section
+            BITMAPINFO bmi;
+            ZeroMemory(&bmi, sizeof(bmi));
+            bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+            bmi.bmiHeader.biWidth = icon.getSize().x;
+            bmi.bmiHeader.biHeight = -icon.getSize().y; // Negative height to indicate a top-down DIB
+            bmi.bmiHeader.biPlanes = 1;
+            bmi.bmiHeader.biBitCount = 32;
+            bmi.bmiHeader.biCompression = BI_RGB;
+
+            void *p_Bitmap = nullptr;
+            HBITMAP h_Bitmap = CreateDIBSection(nullptr, &bmi, DIB_RGB_COLORS, &p_Bitmap, nullptr, 0);
+            if (!h_Bitmap) {
+                return nullptr;
+            }
+
+            // parse pixel data as ARGB
+            std::vector<std::uint32_t> pixels(icon.getSize().x * icon.getSize().y);
+            for (int y = 0; y < icon.getSize().y; ++y) {
+                for (int x = 0; x < icon.getSize().x; ++x) {
+                    auto &color = icon.getData().at(y * icon.getSize().x + x);
+                    pixels[y * icon.getSize().x + x] = (color.a << 24) | (color.r << 16) | (color.g << 8) | color.b;
+                }
+            }
+
+            // copy pixels into the DIB section
+            std::memcpy(p_Bitmap, pixels.data(),
+                        pixels.size() * sizeof(std::uint32_t));
+
+            // create a mask bitmap
+            HBITMAP h_Mask = CreateBitmap(icon.getSize().x, icon.getSize().y, 1, 1, nullptr);
+            if (!h_Mask) {
+                DeleteObject(h_Bitmap);
+                return nullptr;
+            }
+
+            // create the icon
+            ICONINFO ii{};
+            ii.fIcon = true;
+            ii.xHotspot = 0;
+            ii.yHotspot = 0;
+            ii.hbmMask = h_Mask;
+            ii.hbmColor = h_Bitmap;
+
+            HICON h_Icon = CreateIconIndirect(&ii);
+
+            DeleteObject(h_Bitmap);
+            DeleteObject(h_Mask);
+
+            return h_Icon;
+        }
+
+        void Win32Window::setIcon(const core::graphics::Bitmap &icon) {
+            if (h_Window) {
+                SetClassLongPtr(h_Window, GCLP_HICON, reinterpret_cast<LONG_PTR>(bitmapToHICON(icon)));
             }
         }
 

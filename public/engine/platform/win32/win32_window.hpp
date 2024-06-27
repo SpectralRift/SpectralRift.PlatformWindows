@@ -17,6 +17,8 @@ namespace engine::platform {
 
         void setTitle(std::string_view title) override;
 
+        void setIcon(const core::graphics::Bitmap& icon) override;
+
         void setPosition(core::utils::IVector2 position) override;
 
         void setSize(core::utils::IVector2 size) override;
