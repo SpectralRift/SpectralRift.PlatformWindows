@@ -82,10 +82,6 @@ namespace engine {
             }
         }
 
-        // ToDo: I think this method may be EXPENSIVE in memory usage
-        // what do I mean by that? well... we're re-allocating the bitmap every time
-        // this method is called, so therefore we would have a copy of the bitmap,
-        // wasting memory usage. I would prefer to use the bitmap directly, somehow.
         HICON bitmapToHICON(const core::graphics::Bitmap &icon) {
             // we create DIB section
             BITMAPINFO bmi;
@@ -97,24 +93,24 @@ namespace engine {
             bmi.bmiHeader.biBitCount = 32;
             bmi.bmiHeader.biCompression = BI_RGB;
 
-            void *p_Bitmap = nullptr;
-            HBITMAP h_Bitmap = CreateDIBSection(nullptr, &bmi, DIB_RGB_COLORS, &p_Bitmap, nullptr, 0);
+            std::uintptr_t p_Bitmap = 0;
+            HBITMAP h_Bitmap = CreateDIBSection(nullptr, &bmi, DIB_RGB_COLORS, (void **) &p_Bitmap, nullptr, 0);
             if (!h_Bitmap) {
                 return nullptr;
             }
 
-            // parse pixel data as ARGB
-            std::vector<std::uint32_t> pixels(icon.getSize().x * icon.getSize().y);
+            // copy pixels into the DIB section
+            std::memcpy((void *) p_Bitmap, (void *) icon.getData().data(),
+                        icon.getData().size() * sizeof(std::uint32_t));
+
+            // switch pixels to BGRA
             for (int y = 0; y < icon.getSize().y; ++y) {
                 for (int x = 0; x < icon.getSize().x; ++x) {
-                    auto &color = icon.getData().at(y * icon.getSize().x + x);
-                    pixels[y * icon.getSize().x + x] = (color.a << 24) | (color.r << 16) | (color.g << 8) | color.b;
+                    auto color = (core::utils::Color *) (p_Bitmap +
+                                                         (y * icon.getSize().x + x) * sizeof(core::utils::Color));
+                    *color = {color->b, color->g, color->r, color->a};
                 }
             }
-
-            // copy pixels into the DIB section
-            std::memcpy(p_Bitmap, pixels.data(),
-                        pixels.size() * sizeof(std::uint32_t));
 
             // create a mask bitmap
             HBITMAP h_Mask = CreateBitmap(icon.getSize().x, icon.getSize().y, 1, 1, nullptr);
